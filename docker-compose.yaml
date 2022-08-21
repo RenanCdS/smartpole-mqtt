@@ -4,6 +4,7 @@ services:
     image: prom/prometheus:latest
     volumes: 
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./rules.yml:/etc/prometheus/rules.yml
     
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -12,12 +13,42 @@ services:
     networks:
       - shared-net
 
-  node-exporter:
-    image: prom/node-exporter
+  alert-manager:
+    image: prom/alertmanager
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml
     ports:
-      - 9100:9100
+      - 9093:9093
     networks:
       - shared-net
+
+  mqtt-exporter:
+    image: ghcr.io/hikhvar/mqtt2prometheus:latest
+    volumes:
+      - ./config.yaml:/config.yaml
+    ports:
+      - 9641:9641
+
+
+  # node-exporter:
+  #   image: prom/node-exporter
+  #   ports:
+  #     - 9100:9100
+  #   networks:
+  #     - shared-net
+  
+
+  # cadvisor:
+  #   image: google/cadvisor:latest
+  #   ports:
+  #     - 8080:8080
+  #   volumes:
+  #     - /:/roots:ro
+  #     - /var/run:/var/run:rw
+  #     - /sys:/sys:ro
+  #     - /var/lib/docker/:/var/lib/docker:ro
+  #   networks:
+  #     - shared-net
 
   grafana:
     image: grafana/grafana

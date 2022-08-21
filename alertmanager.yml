@@ -1,0 +1,8 @@
+route:
+  receiver: 'jaiminho-webhook'
+
+receivers:
+  - name: 'jaiminho-webhook'
+    webhook_configs:
+    - url: 'http://172.17.0.1:5047/Receiver'
+      send_resolved: true

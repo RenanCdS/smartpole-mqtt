@@ -1,0 +1,10 @@
+groups:
+- name: example
+  rules:
+  - alert: HighTemperature
+    expr: temperature > 10
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: Temperature is too high
