@@ -4,21 +4,18 @@ global:
   evaluation_interval: 15s # Evaluate rules every 15 seconds. The default is every 1 minute.
   # scrape_timeout is set to the global default (10s).
 
-alerting:
-  alertmanagers:
-  - static_configs:
-    - targets:
-      - 172.17.0.1:9093
-
-rule_files:
-  - "rules.yml"
-
 scrape_configs:
   # The job name is added as a label `job=<job_name>` to any timeseries scraped from this config.
-  - job_name: "prometheus"
+  - job_name: "mqtt2prometheus"
 
     # metrics_path defaults to '/metrics'
     # scheme defaults to 'http'.
 
     static_configs:
       - targets: ["172.17.0.1:9641"]
+
+    metric_relabel_configs:
+      - source_labels: ["topic"]
+        target_label: condominium
+        regex: smartpole/(.*)/.*
+        replacement: "$1"
