@@ -12,8 +12,16 @@
 #define   GATEWAY_NODE_ID 2224947593
 #define   IS_GATEWAY      true
 
+const char *SSID = "";
+const char *PWD = "";
+char *mqttServer = "192.168.0.172";
+int mqttPort = 1883;
+
 Scheduler userScheduler; // to control your personal task
 painlessMesh mesh;
+WiFiClient wifiClient;
+PubSubClient mqttClient(wifiClient); 
+
 
 void sendMessage();
 
@@ -50,13 +58,6 @@ void sendMessageToGateway(String message) {
 
 // End MESH NETWORK
 
-WiFiClient wifiClient;
-PubSubClient mqttClient(wifiClient); 
-const char *SSID = "";
-const char *PWD = "";
-char *mqttServer = "192.168.0.172";
-int mqttPort = 1883;
-
 void connectToWiFi() {
   Serial.printf("Connecting...");
   WiFi.begin(SSID, PWD);
@@ -77,6 +78,7 @@ void reconnect() {
   // Loop until we're reconnected
   while (!mqttClient.connected()) {
     Serial.print("Attempting MQTT connection...");
+
     // Attempt to connect
     if (mqttClient.connect("ESP32Client")) {
       Serial.println("connected");
@@ -94,9 +96,8 @@ void setup() {
   // put your setup code here, to run once:
   Serial.begin(115200);
   connectToWiFi();
-  setupMeshNetwork();
-
-  // setupMQTT();
+  setupMQTT();
+  // setupMeshNetwork();
 }
 
 void sendMessageToBroker(String topic, char *message) {
@@ -122,13 +123,11 @@ void loop() {
   sprintf(tempString, "{\"temperature\": %d}", temperatureValue);
   // END
 
-  // if (IS_GATEWAY) {
-  //   sendMessageToBroker("smartpole/temperature", tempString);
-  // } else {
+  if (IS_GATEWAY) {
+    sendMessageToBroker("smartpole/temperature", tempString);
+  } else {
 
-  // }
-  Serial.println(mesh.getNodeId());
+  }
 
-
-  mesh.update();
+  // mesh.update();
 }
