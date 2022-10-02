@@ -3,11 +3,58 @@
 #include <Wire.h>
 #include <PubSubClient.h>
 
+// MESH NETWORK
+#include "painlessMesh.h"
+
+#define   MESH_PREFIX     "SMART_POLES_NETWORK"
+#define   MESH_PASSWORD   "PASSWORD"
+#define   MESH_PORT       5555
+#define   GATEWAY_NODE_ID 2224947593
+#define   IS_GATEWAY      true
+
+Scheduler userScheduler; // to control your personal task
+painlessMesh mesh;
+
+void sendMessage();
+
+// Needed for painless library
+void receivedCallback( uint32_t from, String &msg ) {
+  Serial.printf("startHere: Received from %u msg=%s\n", from, msg.c_str());
+}
+
+void newConnectionCallback(uint32_t nodeId) {
+    Serial.printf("--> startHere: New Connection, nodeId = %u\n", nodeId);
+}
+
+void changedConnectionCallback() {
+  Serial.printf("Changed connections\n");
+}
+
+void nodeTimeAdjustedCallback(int32_t offset) {
+    Serial.printf("Adjusted time %u. Offset = %d\n", mesh.getNodeTime(),offset);
+}
+
+void setupMeshNetwork() {
+  mesh.setDebugMsgTypes( ERROR | STARTUP );  // set before init() so that you can see startup messages
+
+  mesh.init( MESH_PREFIX, MESH_PASSWORD, &userScheduler, MESH_PORT );
+  mesh.onReceive(&receivedCallback);
+  mesh.onNewConnection(&newConnectionCallback);
+  mesh.onChangedConnections(&changedConnectionCallback);
+  mesh.onNodeTimeAdjusted(&nodeTimeAdjustedCallback);
+}
+
+void sendMessageToGateway(String message) {
+  mesh.sendSingle(GATEWAY_NODE_ID, message);
+}
+
+// End MESH NETWORK
+
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient); 
-const char *SSID = "<SSID>";
-const char *PWD = "<PASSWORD>";
-char *mqttServer = "<IP_ADDR>";
+const char *SSID = "";
+const char *PWD = "";
+char *mqttServer = "192.168.0.172";
 int mqttPort = 1883;
 
 void connectToWiFi() {
@@ -47,25 +94,41 @@ void setup() {
   // put your setup code here, to run once:
   Serial.begin(115200);
   connectToWiFi();
-  setupMQTT();
+  setupMeshNetwork();
+
+  // setupMQTT();
+}
+
+void sendMessageToBroker(String topic, char *message) {
+  if (!mqttClient.connected()) {
+    reconnect();
+  }
+  
+  Serial.printf("Publishing message...");
+  mqttClient.publish("smartpole/temperature", message);
+  delay(2000);
 }
 
 int temperatureValue = 10;
 
 void loop() {
-  
-  if (!mqttClient.connected()) {
-    reconnect();
-  }
 
+  // FAKE DATA!!! Send Real data by sensors
   temperatureValue = temperatureValue + 1;
   if (temperatureValue == 30) {
     temperatureValue = 10;
   }
   char tempString[100];
   sprintf(tempString, "{\"temperature\": %d}", temperatureValue);
-  
-  Serial.printf("Publishing message...");
-  mqttClient.publish("smartpole/temperature", tempString);
-  delay(2000);
+  // END
+
+  // if (IS_GATEWAY) {
+  //   sendMessageToBroker("smartpole/temperature", tempString);
+  // } else {
+
+  // }
+  Serial.println(mesh.getNodeId());
+
+
+  mesh.update();
 }
