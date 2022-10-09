@@ -1,93 +1,86 @@
 #include <Arduino.h>
-#include <WiFi.h>
-#include <Wire.h>
+#include <painlessMesh.h>
 #include <PubSubClient.h>
+#include <WiFi.h>
+#include <cstring>
 
-// MESH NETWORK
+
 #include "painlessMesh.h"
+
+#define IS_ROOT           true
+#define ROOT_HOSTNAME     "SmartPoleRoot"
+#define NODE_HOSTNAME     "SmartPoleNode1"
 
 #define   MESH_PREFIX     "SMART_POLES_NETWORK"
 #define   MESH_PASSWORD   "PASSWORD"
 #define   MESH_PORT       5555
-#define   GATEWAY_NODE_ID 2224947593
-#define   IS_GATEWAY      true
 
-const char *SSID = "";
-const char *PWD = "";
-char *mqttServer = "192.168.0.172";
-int mqttPort = 1883;
+#define STATION_SSID      "Ygor 2.4G"
+#define STATION_PASSWORD  "Y87644378"
+
+IPAddress getlocalIP();
+void mqttCallback(char* topic, byte* payload, unsigned int length);
+
+IPAddress myIP(0,0,0,0);
+IPAddress mqttBroker(192, 168, 0, 172);
 
 Scheduler userScheduler; // to control your personal task
 painlessMesh mesh;
 WiFiClient wifiClient;
-PubSubClient mqttClient(wifiClient); 
-
+PubSubClient mqttClient(mqttBroker, 1883, mqttCallback, wifiClient);
 
 void sendMessage();
 
-// Needed for painless library
 void receivedCallback( uint32_t from, String &msg ) {
   Serial.printf("startHere: Received from %u msg=%s\n", from, msg.c_str());
-}
-
-void newConnectionCallback(uint32_t nodeId) {
-    Serial.printf("--> startHere: New Connection, nodeId = %u\n", nodeId);
-}
-
-void changedConnectionCallback() {
-  Serial.printf("Changed connections\n");
-}
-
-void nodeTimeAdjustedCallback(int32_t offset) {
-    Serial.printf("Adjusted time %u. Offset = %d\n", mesh.getNodeTime(),offset);
-}
-
-void setupMeshNetwork() {
-  mesh.setDebugMsgTypes( ERROR | STARTUP );  // set before init() so that you can see startup messages
-
-  mesh.init( MESH_PREFIX, MESH_PASSWORD, &userScheduler, MESH_PORT );
-  mesh.onReceive(&receivedCallback);
-  mesh.onNewConnection(&newConnectionCallback);
-  mesh.onChangedConnections(&changedConnectionCallback);
-  mesh.onNodeTimeAdjusted(&nodeTimeAdjustedCallback);
-}
-
-void sendMessageToGateway(String message) {
-  mesh.sendSingle(GATEWAY_NODE_ID, message);
-}
-
-// End MESH NETWORK
-
-void connectToWiFi() {
-  Serial.printf("Connecting...");
-  WiFi.begin(SSID, PWD);
-  Serial.printf(SSID);
-  while (WiFi.status() != WL_CONNECTED) {
-    Serial.printf(".");
-    delay(500);
-  }
-  Serial.printf("Connected.");
-}
-
-void setupMQTT() {
-  mqttClient.setServer(mqttServer, mqttPort);
-  Serial.print("MQTT configured...");
-}
-
-void reconnect() {
-  // Loop until we're reconnected
-  while (!mqttClient.connected()) {
+  if (IS_ROOT) {
     Serial.print("Attempting MQTT connection...");
-
-    // Attempt to connect
     if (mqttClient.connect("ESP32Client")) {
-      Serial.println("connected");
+      Serial.println("Sending message from node1...");
+      mqttClient.publish("smartpole/temperature", msg.c_str());
+      delay(2000);
     } else {
       Serial.print("failed, rc=");
       Serial.print(mqttClient.state());
-      Serial.println(" try again in 5 seconds");
-      // Wait 5 seconds before retrying
-      delay(5000);
+    }
+  }
+  delay(2000);
+}
+
+void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
+  char* cleanPayload = (char*)malloc(length+1);
+  payload[length] = '\0';
+  memcpy(cleanPayload, payload, length+1);
+  String msg = String(cleanPayload);
+  free(cleanPayload);
+
+  String targetStr = String(topic).substring(16);
+
+  if(targetStr == "gateway")
+  {
+    if(msg == "getNodes")
+    {
+      auto nodes = mesh.getNodeList(true);
+      String str;
+      for (auto &&id : nodes)
+        str += String(id) + String(" ");
+      mqttClient.publish("painlessMesh/from/gateway", str.c_str());
+    }
+  }
+  else if(targetStr == "broadcast") 
+  {
+    mesh.sendBroadcast(msg);
+  }
+  else
+  {
+    uint32_t target = strtoul(targetStr.c_str(), NULL, 10);
+    if(mesh.isConnected(target))
+    {
+      mesh.sendSingle(target, msg);
+    }
+    else
+    {
+      mqttClient.publish("painlessMesh/from/gateway", "Client not connected!");
     }
   }
 }
@@ -95,39 +88,46 @@ void reconnect() {
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(115200);
-  connectToWiFi();
-  setupMQTT();
-  // setupMeshNetwork();
-}
-
-void sendMessageToBroker(String topic, char *message) {
-  if (!mqttClient.connected()) {
-    reconnect();
-  }
   
-  Serial.printf("Publishing message...");
-  mqttClient.publish("smartpole/temperature", message);
-  delay(2000);
-}
+  // MESH NETWORK 
+  mesh.setDebugMsgTypes(ERROR | MESH_STATUS | CONNECTION | SYNC | COMMUNICATION | GENERAL | MSG_TYPES | REMOTE ); 
+  mesh.onReceive(&receivedCallback);
 
-int temperatureValue = 10;
+  mesh.init(MESH_PREFIX, MESH_PASSWORD, MESH_PORT, WIFI_AP_STA, 11);
+  mesh.initOTAReceive("bridge"); // TODO: Verify if this method made the connection work
+
+  if (IS_ROOT) {
+    mesh.stationManual(STATION_SSID, STATION_PASSWORD);
+    mesh.setHostname(ROOT_HOSTNAME);
+  } else {
+    mesh.setHostname(NODE_HOSTNAME);
+  }
+
+  mesh.setRoot(IS_ROOT);
+  mesh.setContainsRoot(true);
+}
 
 void loop() {
+  if (IS_ROOT) {
+    // mqttClient.loop();
 
-  // FAKE DATA!!! Send Real data by sensors
-  temperatureValue = temperatureValue + 1;
-  if (temperatureValue == 30) {
-    temperatureValue = 10;
-  }
-  char tempString[100];
-  sprintf(tempString, "{\"temperature\": %d}", temperatureValue);
-  // END
+    // Serial.print("Attempting MQTT connection...");
 
-  if (IS_GATEWAY) {
-    sendMessageToBroker("smartpole/temperature", tempString);
+    // // Attempt to connect
+    // if (mqttClient.connect("ESP32Client")) {
+    //   Serial.println("connected");
+    //   mqttClient.publish("smartpole/temperature","Ready!");
+    //   delay(2000);
+    // } else {
+    //   Serial.print("failed, rc=");
+    //   Serial.print(mqttClient.state());
+    // }
   } else {
-
+    mesh.sendBroadcast("Message from node1");
   }
+  mesh.update();
+}
 
-  // mesh.update();
+IPAddress getlocalIP() {
+  return IPAddress(mesh.getStationIP());
 }
