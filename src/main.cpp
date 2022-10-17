@@ -9,7 +9,7 @@
 
 #define ID_GATEWAY 1370564033
 
-#define IS_ROOT           true
+#define IS_ROOT           false
 #define ROOT_HOSTNAME     "SmartPoleRoot"
 #define NODE_HOSTNAME     "SmartPoleNode1"
 
@@ -97,13 +97,24 @@ void configureMqtt()
   mqttClient.setClient(wifiClient);
 }
 
+void sendmsg() ;
+
+Task taskSendmsg( TASK_SECOND * 3 , TASK_FOREVER, &sendmsg );
+
+void sendmsg() {
+  String msg = "This is a testing message from Node1";
+  msg += mesh.getNodeId();
+  mesh.sendSingle(ID_GATEWAY, msg);
+  taskSendmsg.setInterval(TASK_SECOND * 2);
+}
+
 void setup() {
   Serial.begin(115200);
   
   // MESH NETWORK 
   mesh.setDebugMsgTypes(ERROR | MESH_STATUS | CONNECTION | SYNC | COMMUNICATION | GENERAL | MSG_TYPES | REMOTE ); 
 
-  mesh.init(MESH_PREFIX, MESH_PASSWORD, MESH_PORT, WIFI_AP_STA, 11);
+  mesh.init(MESH_PREFIX, MESH_PASSWORD, &userScheduler, MESH_PORT, WIFI_AP_STA, 11);
   //mesh.initOTAReceive("bridge"); // TODO: Verify if this method made the connection work
 
   if (IS_ROOT) {
@@ -112,11 +123,17 @@ void setup() {
     configureMqtt();
   } else {
     mesh.setHostname(NODE_HOSTNAME);
+    userScheduler.addTask( taskSendmsg );
   }
 
   mesh.setRoot(IS_ROOT);
   mesh.setContainsRoot(true);
   mesh.onReceive(&receivedCallback);
+
+  if (IS_ROOT == false)
+  {
+    taskSendmsg.enable();
+  }
 }
 
 void loop() {
@@ -134,8 +151,6 @@ void loop() {
     //   Serial.print(mqttClient.state());
     // }
     mqttClient.loop();
-  } else {
-    mesh.sendSingle(ID_GATEWAY, "Message from node1");
   }
   mesh.update();
 }
