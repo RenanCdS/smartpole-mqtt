@@ -1,15 +1,15 @@
 #include <Arduino.h>
 #include <painlessMesh.h>
 #include <PubSubClient.h>
-// #include <WiFi.h>
 #include <cstring>
+#include <ArduinoJson.h>
 
 
 #include "painlessMesh.h"
 
 #define ID_GATEWAY 1370564033
 
-#define IS_ROOT           false
+#define IS_ROOT           true
 #define ROOT_HOSTNAME     "SmartPoleRoot"
 #define NODE_HOSTNAME     "SmartPoleNode1"
 
@@ -20,8 +20,6 @@
 #define STATION_SSID      ""
 #define STATION_PASSWORD  ""
 #define STATION_PORT     5555
-uint8_t   station_ip[4] =  {192,168,0,180};
-
 
 IPAddress getlocalIP();
 void mqttCallback(char* topic, byte* payload, unsigned int length);
@@ -29,26 +27,32 @@ void mqttCallback(char* topic, byte* payload, unsigned int length);
 IPAddress myIP(0,0,0,0);
 IPAddress mqttBroker(192, 168, 211, 117);
 
-Scheduler userScheduler; // to control your personal task
+Scheduler userScheduler;
 painlessMesh mesh;
 WiFiClient wifiClient;
 PubSubClient mqttClient;
 
-void sendMessage();
+void sendMessage() ;
 
-void receivedCallback( uint32_t from, String &msg ) {
-  Serial.printf("startHere: Received from %u msg=%s\n", from, msg.c_str());
-  if (IS_ROOT) {
-    Serial.print("Attempting MQTT connection...");
-    Serial.print(WiFi.status());
-    if (mqttClient.connect("ESP32Client")) {
-      Serial.println("Sending message from node1...");
-      mqttClient.publish("smartpole/temperature", msg.c_str());
+Task taskSendmsg(TASK_SECOND * 3,TASK_FOREVER, &sendMessage);
+
+/// @brief Sends information to mqtt broker based on a topic
+/// @param topic The topic that the message will be sent
+/// @param message 
+void sendToMqttBroker(String topic, String message) {
+  Serial.print("Attempting MQTT connection...");
+  Serial.print(WiFi.status());
+   if (mqttClient.connect("ESP32Client")) {
+      Serial.printf("Sending message from %u to topic %s\n...", mesh.getNodeId(), topic.c_str());
+      mqttClient.publish(topic.c_str(), message.c_str());
     } else {
       Serial.print("failed, rc=");
       Serial.print(mqttClient.state());
     }
-  }
+}
+
+void receivedData(uint32_t from, String sensorData) {
+  sendToMqttBroker("smartpole/condominio-fesa/data", sensorData);
 }
 
 void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
@@ -91,20 +95,53 @@ void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
 
 void configureMqtt() 
 {
+  // In case mesh network does not start comment this line, upload the code in root node.
+  // After that uncomment this line and upload the code again in root node
   WiFi.begin(STATION_SSID, STATION_PASSWORD);
   mqttClient.setServer(mqttBroker, 1883);
   mqttClient.setCallback(mqttCallback);  
   mqttClient.setClient(wifiClient);
 }
 
-void sendmsg() ;
+String getDataObject(float sound, float temperature, float humidity, float energy) {
+  String output;
+  
+  DynamicJsonDocument  doc(200);
+  doc["sound"] = sound;
+  doc["temperature"] = temperature;
+  doc["humidity"] = humidity;
+  doc["energy"] = energy;
 
-Task taskSendmsg( TASK_SECOND * 3 , TASK_FOREVER, &sendmsg );
+  serializeJson(doc, output);
 
-void sendmsg() {
-  String msg = "This is a testing message from Node1";
-  msg += mesh.getNodeId();
-  mesh.sendSingle(ID_GATEWAY, msg);
+  return output;
+}
+
+float getTemperatureData() {
+  return 20.0;
+}
+
+float getSoundData() {
+  return 1.0;
+}
+
+float getEnergyData() {
+  return 3.0; 
+}
+
+float getHumidityData() {
+  return 4.0;
+}
+
+void sendMessage() {
+  float temperature = getTemperatureData();
+  float humidity = getHumidityData();
+  float sound = getSoundData();
+  float energy = getEnergyData();
+
+  String dataObjectString = getDataObject(sound, temperature, humidity, energy);
+
+  mesh.sendSingle(ID_GATEWAY, dataObjectString);
   taskSendmsg.setInterval(TASK_SECOND * 2);
 }
 
@@ -115,7 +152,6 @@ void setup() {
   mesh.setDebugMsgTypes(ERROR | MESH_STATUS | CONNECTION | SYNC | COMMUNICATION | GENERAL | MSG_TYPES | REMOTE ); 
 
   mesh.init(MESH_PREFIX, MESH_PASSWORD, &userScheduler, MESH_PORT, WIFI_AP_STA, 11);
-  //mesh.initOTAReceive("bridge"); // TODO: Verify if this method made the connection work
 
   if (IS_ROOT) {
     mesh.stationManual(STATION_SSID, STATION_PASSWORD);
@@ -123,33 +159,21 @@ void setup() {
     configureMqtt();
   } else {
     mesh.setHostname(NODE_HOSTNAME);
-    userScheduler.addTask( taskSendmsg );
   }
 
   mesh.setRoot(IS_ROOT);
   mesh.setContainsRoot(true);
-  mesh.onReceive(&receivedCallback);
+  mesh.onReceive(&receivedData);
 
   if (IS_ROOT == false)
   {
+    userScheduler.addTask(taskSendmsg);
     taskSendmsg.enable();
   }
 }
 
 void loop() {
   if (IS_ROOT) {
-    // mqttClient.loop();
-
-    // Serial.print("Attempting MQTT connection...");
-
-    // // Attempt to connect
-    // if (mqttClient.connect("ESP32Client")) {
-    //   Serial.println("connected");
-    //   mqttClient.publish("smartpole/temperature","Ready!");
-    // } else {
-    //   Serial.print("failed, rc=");
-    //   Serial.print(mqttClient.state());
-    // }
     mqttClient.loop();
   }
   mesh.update();
