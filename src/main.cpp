@@ -21,6 +21,9 @@
 #define STATION_PASSWORD  ""
 #define STATION_PORT     5555
 
+int CONDOMINIUM_CODE = 123;
+/// @brief Topic pattern = smartpole/<CONDOMINIUM_CODE>/data
+String CONDOMINIUM_TOPIC = "smartpole/123/data";
 IPAddress getlocalIP();
 void mqttCallback(char* topic, byte* payload, unsigned int length);
 
@@ -52,7 +55,7 @@ void sendToMqttBroker(String topic, String message) {
 }
 
 void receivedData(uint32_t from, String sensorData) {
-  sendToMqttBroker("smartpole/condominio-fesa/data", sensorData);
+  sendToMqttBroker(CONDOMINIUM_TOPIC, sensorData);
 }
 
 void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
@@ -117,20 +120,21 @@ String getDataObject(float sound, float temperature, float humidity, float energ
   return output;
 }
 
+// TODO: Implement the real sensors
 float getTemperatureData() {
-  return 20.0;
+  return rand() % (10 + 1 - 0) + 0;
 }
 
 float getSoundData() {
-  return 1.0;
+  return rand() % (10 + 1 - 0) + 0;
 }
 
 float getEnergyData() {
-  return 3.0; 
+  return rand() % (10 + 1 - 0) + 0;
 }
 
 float getHumidityData() {
-  return 4.0;
+  return rand() % (10 + 1 - 0) + 0;
 }
 
 void sendMessage() {
