@@ -3,11 +3,18 @@
 #include <PubSubClient.h>
 #include <cstring>
 #include <ArduinoJson.h>
-
+#include <Adafruit_Sensor.h>
+#include "DHT.h"
 
 #include "painlessMesh.h"
 
-#define ID_GATEWAY 1370564033
+// Temperature and humidity sensor configuration
+#define DHTPIN 4
+#define DHTTYPE DHT11  
+DHT dht(DHTPIN, DHTTYPE);
+
+#define ID_GATEWAY 1370564033 
+//2224947593
 
 #define IS_ROOT           true
 #define ROOT_HOSTNAME     "SmartPoleRoot"
@@ -24,7 +31,6 @@
 int CONDOMINIUM_CODE = 123;
 /// @brief Topic pattern = smartpole/<CONDOMINIUM_CODE>/data
 String CONDOMINIUM_TOPIC = "smartpole/123/data";
-IPAddress getlocalIP();
 void mqttCallback(char* topic, byte* payload, unsigned int length);
 
 IPAddress myIP(0,0,0,0);
@@ -35,7 +41,8 @@ painlessMesh mesh;
 WiFiClient wifiClient;
 PubSubClient mqttClient;
 
-void sendMessage() ;
+void sendMessage();
+IPAddress getlocalIP();
 
 Task taskSendmsg(TASK_SECOND * 3,TASK_FOREVER, &sendMessage);
 
@@ -122,7 +129,7 @@ String getDataObject(float sound, float temperature, float humidity, float energ
 
 // TODO: Implement the real sensors
 float getTemperatureData() {
-  return rand() % (10 + 1 - 0) + 0;
+  return dht.readTemperature();
 }
 
 float getSoundData() {
@@ -134,7 +141,7 @@ float getEnergyData() {
 }
 
 float getHumidityData() {
-  return rand() % (10 + 1 - 0) + 0;
+  return dht.readHumidity();
 }
 
 void sendMessage() {
@@ -146,15 +153,15 @@ void sendMessage() {
   String dataObjectString = getDataObject(sound, temperature, humidity, energy);
 
   mesh.sendSingle(ID_GATEWAY, dataObjectString);
-  taskSendmsg.setInterval(TASK_SECOND * 2);
+  taskSendmsg.setInterval(TASK_SECOND * 5);
 }
 
 void setup() {
   Serial.begin(115200);
+  dht.begin();
   
   // MESH NETWORK 
   mesh.setDebugMsgTypes(ERROR | MESH_STATUS | CONNECTION | SYNC | COMMUNICATION | GENERAL | MSG_TYPES | REMOTE ); 
-
   mesh.init(MESH_PREFIX, MESH_PASSWORD, &userScheduler, MESH_PORT, WIFI_AP_STA, 11);
 
   if (IS_ROOT) {
