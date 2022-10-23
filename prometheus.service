@@ -4,7 +4,7 @@ Wants=network-online.target
 After=network-online.target
 
 [Service]
-User=ec2-user
+User=ubuntu
 Type=simple
 ExecStart=/usr/local/bin/prometheus --config.file /etc/prometheus/prometheus.yml
 

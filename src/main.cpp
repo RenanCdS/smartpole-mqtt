@@ -18,7 +18,7 @@ DHT dht(DHTPIN, DHTTYPE);
 
 #define IS_ROOT           true
 #define ROOT_HOSTNAME     "SmartPoleRoot"
-#define NODE_HOSTNAME     "SmartPoleNode1"
+#define NODE_HOSTNAME     "SmartPoleNode2"
 
 #define   MESH_PREFIX     "SMART_POLES_NETWORK"
 #define   MESH_PASSWORD   "PASSWORD"
@@ -30,21 +30,23 @@ DHT dht(DHTPIN, DHTTYPE);
 
 int CONDOMINIUM_CODE = 123;
 /// @brief Topic pattern = smartpole/<CONDOMINIUM_CODE>/data
-String CONDOMINIUM_TOPIC = "smartpole/123/data";
+String CONDOMINIUM_TOPIC = "smartpole/123/gateway/data";
 void mqttCallback(char* topic, byte* payload, unsigned int length);
 
 IPAddress myIP(0,0,0,0);
-IPAddress mqttBroker(192, 168, 211, 117);
+IPAddress mqttBroker(34, 200, 57, 252);
 
 Scheduler userScheduler;
 painlessMesh mesh;
 WiFiClient wifiClient;
-PubSubClient mqttClient;
+PubSubClient mqttClient(wifiClient);
 
 void sendMessage();
+void sendMessageToGateway();
 IPAddress getlocalIP();
 
 Task taskSendmsg(TASK_SECOND * 3,TASK_FOREVER, &sendMessage);
+Task taskSendmsgToGateway(TASK_SECOND * 3,TASK_FOREVER, &sendMessageToGateway);
 
 /// @brief Sends information to mqtt broker based on a topic
 /// @param topic The topic that the message will be sent
@@ -62,44 +64,12 @@ void sendToMqttBroker(String topic, String message) {
 }
 
 void receivedData(uint32_t from, String sensorData) {
-  sendToMqttBroker(CONDOMINIUM_TOPIC, sensorData);
-}
 
-void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
-  char* cleanPayload = (char*)malloc(length+1);
-  payload[length] = '\0';
-  memcpy(cleanPayload, payload, length+1);
-  String msg = String(cleanPayload);
-  free(cleanPayload);
-
-  String targetStr = String(topic).substring(16);
-
-  if(targetStr == "gateway")
+  if (from == 2747788829) 
   {
-    if(msg == "getNodes")
-    {
-      auto nodes = mesh.getNodeList(true);
-      String str;
-      for (auto &&id : nodes)
-        str += String(id) + String(" ");
-      mqttClient.publish("painlessMesh/from/gateway", str.c_str());
-    }
-  }
-  else if(targetStr == "broadcast") 
-  {
-    mesh.sendBroadcast(msg);
-  }
-  else
-  {
-    uint32_t target = strtoul(targetStr.c_str(), NULL, 10);
-    if(mesh.isConnected(target))
-    {
-      mesh.sendSingle(target, msg);
-    }
-    else
-    {
-      mqttClient.publish("painlessMesh/from/gateway", "Client not connected!");
-    }
+    sendToMqttBroker("smartpole/123/pole_1/data", sensorData);
+  } else {
+    sendToMqttBroker("smartpole/123/pole_2/data", sensorData);
   }
 }
 
@@ -107,9 +77,9 @@ void configureMqtt()
 {
   // In case mesh network does not start comment this line, upload the code in root node.
   // After that uncomment this line and upload the code again in root node
+  WiFi.mode(WIFI_AP_STA);
   WiFi.begin(STATION_SSID, STATION_PASSWORD);
   mqttClient.setServer(mqttBroker, 1883);
-  mqttClient.setCallback(mqttCallback);  
   mqttClient.setClient(wifiClient);
 }
 
@@ -144,21 +114,32 @@ float getHumidityData() {
   return dht.readHumidity();
 }
 
-void sendMessage() {
+String getDataObjectString() {
   float temperature = getTemperatureData();
   float humidity = getHumidityData();
   float sound = getSoundData();
   float energy = getEnergyData();
 
-  String dataObjectString = getDataObject(sound, temperature, humidity, energy);
+
+  return getDataObject(sound, temperature, humidity, energy);
+}
+
+void sendMessage() {
+  String dataObjectString = getDataObjectString();
 
   mesh.sendSingle(ID_GATEWAY, dataObjectString);
   taskSendmsg.setInterval(TASK_SECOND * 5);
 }
 
+void sendMessageToGateway() {
+  sendToMqttBroker("smartpole/123/gateway/data", getDataObjectString());
+
+  taskSendmsgToGateway.setInterval(TASK_SECOND * 5);
+}
+
 void setup() {
   Serial.begin(115200);
-  dht.begin();
+  // dht.begin();
   
   // MESH NETWORK 
   mesh.setDebugMsgTypes(ERROR | MESH_STATUS | CONNECTION | SYNC | COMMUNICATION | GENERAL | MSG_TYPES | REMOTE ); 
@@ -176,7 +157,11 @@ void setup() {
   mesh.setContainsRoot(true);
   mesh.onReceive(&receivedData);
 
-  if (IS_ROOT == false)
+  if (IS_ROOT == true) {
+    userScheduler.addTask(taskSendmsgToGateway);
+    taskSendmsgToGateway.enable();
+  }
+  else
   {
     userScheduler.addTask(taskSendmsg);
     taskSendmsg.enable();
@@ -186,10 +171,6 @@ void setup() {
 void loop() {
   if (IS_ROOT) {
     mqttClient.loop();
-  }
+  } 
   mesh.update();
-}
-
-IPAddress getlocalIP() {
-  return IPAddress(mesh.getStationIP());
 }

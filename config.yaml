@@ -1,8 +1,8 @@
 mqtt:
  # The MQTT broker to connect to
- server: tcp://172.17.0.1:1883
+ server: tcp://34.200.57.252:1883
  # The Topic path to subscribe to. Be aware that you have to specify the wildcard, if you want to follow topics for multiple sensors.
- topic_path: smartpole/#
+ topic_path: smartpole/+/+/data
  # The MQTT QoS level
  qos: 0
 cache:
