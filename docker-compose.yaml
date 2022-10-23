@@ -22,12 +22,26 @@ services:
     networks:
       - shared-net
 
-  mqtt-exporter:
+  mqtt-exporter-gateway:
     image: ghcr.io/hikhvar/mqtt2prometheus:latest
     volumes:
-      - ./config.yaml:/config.yaml
+      - ./config-gateway.yaml:/config.yaml
+    ports:
+      - 9640:9641
+
+  mqtt-exporter-pole-1:
+    image: ghcr.io/hikhvar/mqtt2prometheus:latest
+    volumes:
+      - ./config-1.yaml:/config.yaml
     ports:
       - 9641:9641
+
+  mqtt-exporter-2:
+    image: ghcr.io/hikhvar/mqtt2prometheus:latest
+    volumes:
+      - ./config-2.yaml:/config.yaml
+    ports:
+      - 9642:9641
 
   grafana:
     image: grafana/grafana

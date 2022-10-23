@@ -1,0 +1,96 @@
+mqtt:
+ # The MQTT broker to connect to
+ server: tcp://34.200.57.252:1883
+ # The Topic path to subscribe to. Be aware that you have to specify the wildcard, if you want to follow topics for multiple sensors.
+ topic_path: smartpole/+/pole_wesley/data
+ # The MQTT QoS level
+ qos: 0
+cache:
+ # Timeout. Each received metric will be presented for this time if no update is send via MQTT.
+ # Set the timeout to -1 to disable the deletion of metrics from the cache. The exporter presents the ingest timestamp
+ # to prometheus.
+ timeout: 24h
+json_parsing:
+ # Separator. Used to split path to elements when accessing json fields.
+ # You can access json fields with dots in it. F.E. {"key.name": {"nested": "value"}}
+ # Just set separator to -> and use key.name->nested as mqtt_name
+ separator: .
+# This is a list of valid metrics. Only metrics listed here will be exported
+metrics:
+ # The name of the metric in prometheus
+ - prom_name: temperature
+  # The name of the metric in a MQTT JSON message
+   mqtt_name: temperature
+  # The prometheus help text for this metric
+   help: DHT22 temperature reading
+  # The prometheus type for this metric. Valid values are: "gauge" and "counter"
+   type: gauge
+  # A map of string to string for constant labels. This labels will be attached to every prometheus metric
+   const_labels:
+    sensor_type: dht22
+  # When specified, enables mapping between string values to metric values.
+   string_value_mapping:
+    # A map of string to metric value.
+    map:
+     off: 0
+     low: 0
+    # Metric value to use if a match cannot be found in the map above.
+    # If not specified, parsing error will occur.
+    error_value: 1
+ - prom_name: humidity
+  # The name of the metric in a MQTT JSON message
+   mqtt_name: humidity
+  # The prometheus help text for this metric
+   help: DHT22 humidity reading
+  # The prometheus type for this metric. Valid values are: "gauge" and "counter"
+   type: gauge
+  # A map of string to string for constant labels. This labels will be attached to every prometheus metric
+   const_labels:
+    sensor_type: dht22
+  # When specified, enables mapping between string values to metric values.
+   string_value_mapping:
+    # A map of string to metric value.
+    map:
+     off: 0
+     low: 0
+    # Metric value to use if a match cannot be found in the map above.
+    # If not specified, parsing error will occur.
+    error_value: 1
+ - prom_name: sound
+  # The name of the metric in a MQTT JSON message
+   mqtt_name: sound
+  # The prometheus help text for this metric
+   help: Sound reading
+  # The prometheus type for this metric. Valid values are: "gauge" and "counter"
+   type: gauge
+  # A map of string to string for constant labels. This labels will be attached to every prometheus metric
+   const_labels:
+    sensor_type: sound-sensor
+  # When specified, enables mapping between string values to metric values.
+   string_value_mapping:
+    # A map of string to metric value.
+    map:
+     off: 0
+     low: 0
+    # Metric value to use if a match cannot be found in the map above.
+    # If not specified, parsing error will occur.
+    error_value: 1
+ - prom_name: energy
+  # The name of the metric in a MQTT JSON message
+   mqtt_name: energy
+  # The prometheus help text for this metric
+   help: Energy reading
+  # The prometheus type for this metric. Valid values are: "gauge" and "counter"
+   type: gauge
+  # A map of string to string for constant labels. This labels will be attached to every prometheus metric
+   const_labels:
+    sensor_type: energy-sensor
+  # When specified, enables mapping between string values to metric values.
+   string_value_mapping:
+    # A map of string to metric value.
+    map:
+     off: 0
+     low: 0
+    # Metric value to use if a match cannot be found in the map above.
+    # If not specified, parsing error will occur.
+    error_value: 1
