@@ -12,9 +12,9 @@ scrape_configs:
     # scheme defaults to 'http'.
 
     static_configs:
-      - targets: ["172.17.0.1:9640",
-                  "172.17.0.1:9641",
-                  "172.17.0.1:9642"]
+      - targets: ["54.80.80.2:9640",
+                  "54.80.80.2:9641",
+                  "54.80.80.2:9642"]
 
     metric_relabel_configs:
       - source_labels: ["topic"]
