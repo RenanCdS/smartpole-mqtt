@@ -13,16 +13,21 @@
 #define DHTTYPE DHT11  
 DHT dht(DHTPIN, DHTTYPE);
 
+#define CURRENT_POLE_ID 2747788829
+
 #define ID_GATEWAY 1370564033 
-//2224947593
+#define ID_POLE_1 2747788829
+#define ID_POLE_2 2224947593
+
+#define TURN_ON_KEYWORD "TURN_ON"
 
 #define IS_ROOT           true
 #define ROOT_HOSTNAME     "SmartPoleRoot"
 #define NODE_HOSTNAME     "SmartPoleNode2"
 
-#define   MESH_PREFIX     "SMART_POLES_NETWORK"
-#define   MESH_PASSWORD   "PASSWORD"
-#define   MESH_PORT       5555
+#define MESH_PREFIX       "SMART_POLES_NETWORK"
+#define MESH_PASSWORD     "PASSWORD"
+#define MESH_PORT         5555
 
 #define STATION_SSID      ""
 #define STATION_PASSWORD  ""
@@ -63,14 +68,21 @@ void sendToMqttBroker(String topic, String message) {
     }
 }
 
-void receivedData(uint32_t from, String sensorData) {
-
-  if (from == 2747788829) 
-  {
-    sendToMqttBroker("smartpole/123/pole_1/data", sensorData);
+/// @brief Verifies if the data received is the event TURN_ON or broker data.
+/// In case it is the turn on data it will turn on the light, otherwise it will send the received data to the broker
+/// @param from 
+/// @param data 
+void receivedData(uint32_t from, String data) {
+  if (data == TURN_ON_KEYWORD) {
+    turnOnLight();
   } else {
-    sendToMqttBroker("smartpole/123/pole_2/data", sensorData);
-  }
+    if (from == ID_POLE_1) 
+    {
+      sendToMqttBroker("smartpole/123/pole_1/data", data);
+    } else {
+      sendToMqttBroker("smartpole/123/pole_2/data", data);
+    }
+  } 
 }
 
 void configureMqtt() 
@@ -132,6 +144,7 @@ void sendMessage() {
 }
 
 void sendMessageToGateway() {
+  // smartpole/{condominiumCode}/gateway/data
   sendToMqttBroker("smartpole/123/gateway/data", getDataObjectString());
 
   taskSendmsgToGateway.setInterval(TASK_SECOND * 5);
@@ -173,4 +186,39 @@ void loop() {
     mqttClient.loop();
   } 
   mesh.update();
+
+  verifyPoleLights();
+}
+
+/// @brief Check if the presence sensor is active in the current pole and in case it is
+/// it will send a message to the next pole via mesh network. This assumes an architecture of 3 poles
+void verifyPoleLights() {
+  if (isPresenceSensorActive()) {
+    switch (CURRENT_POLE_ID) {
+      case ID_POLE_1:
+        turnOnLightAndsendMessageToNextPole(ID_POLE_2);
+        break;
+      case ID_POLE_2:
+        turnOnLightAndsendMessageToNextPole(ID_GATEWAY);
+        turnOnLightAndsendMessageToNextPole(ID_POLE_1);
+        break;
+      case ID_GATEWAY:
+        turnOnLightAndsendMessageToNextPole(ID_POLE_2);
+        break;
+    }
+  }
+}
+
+bool isPresenceSensorActive() {
+  return true;
+}
+
+void turnOnLightAndsendMessageToNextPole(int nextPole) {
+  turnOnLight();
+  mesh.sendSingle(nextPole, "TURN_ON");
+}
+
+// TODO: Implement the logic to turn on the light
+void turnOnLight() {
+
 }
