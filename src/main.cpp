@@ -8,11 +8,23 @@
 
 #include "painlessMesh.h"
 
+// Light configuration
+#define RELE_1  22
+#define RELE_2  23
+#define LIGHT_SENSOR_PIN 18 // ESP32 pin GIOP36 (ADC0)
+#define PRESENCE_SENSOR_PIN 12 // ESP32 pin GIOP12 (ADC5)
+
+bool nightTime;
+int intervalLDR;
+int DELAY_TIME = 500;
+int BASE_TIME_TO_VERIFY_SENSORS = 3000;
+
 // Temperature and humidity sensor configuration
 #define DHTPIN 4
 #define DHTTYPE DHT11  
 DHT dht(DHTPIN, DHTTYPE);
 
+// Pole configuration
 #define CURRENT_POLE_ID 2747788829
 
 #define ID_GATEWAY 1370564033 
@@ -41,17 +53,20 @@ void mqttCallback(char* topic, byte* payload, unsigned int length);
 IPAddress myIP(0,0,0,0);
 IPAddress mqttBroker(34, 200, 57, 252);
 
-Scheduler userScheduler;
+Scheduler scheduler;
 painlessMesh mesh;
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
 
 void sendMessage();
 void sendMessageToGateway();
+void verifyLightControl();
+
 IPAddress getlocalIP();
 
 Task taskSendmsg(TASK_SECOND * 3,TASK_FOREVER, &sendMessage);
 Task taskSendmsgToGateway(TASK_SECOND * 3,TASK_FOREVER, &sendMessageToGateway);
+Task taskVerifyLightControl(TASK_SECOND * 2, TASK_FOREVER, &verifyLightControl);
 
 /// @brief Sends information to mqtt broker based on a topic
 /// @param topic The topic that the message will be sent
@@ -66,6 +81,50 @@ void sendToMqttBroker(String topic, String message) {
       Serial.print("failed, rc=");
       Serial.print(mqttClient.state());
     }
+}
+
+void verifyLightControl()
+{
+  bool hasPresence = digitalRead(PRESENCE_SENSOR_PIN);
+  intervalLDR += DELAY_TIME;
+  if (intervalLDR >= BASE_TIME_TO_VERIFY_SENSORS)
+  {
+    int lightValue = digitalRead(LIGHT_SENSOR_PIN); // read light sensor
+    Serial.print("light -> ");
+    Serial.println(lightValue);
+    nightTime = lightValue; // is night time
+    intervalLDR = 0;
+  }
+
+  if (nightTime)
+  {
+    Serial.println("Entrou no digital write");
+    digitalWrite(RELE_1, HIGH);
+  }
+  else
+  {
+    digitalWrite(RELE_1, LOW);
+  }
+
+  if (nightTime && hasPresence)
+  {
+
+    digitalWrite(RELE_2, HIGH); // presence detected
+  }
+  else
+  {
+    digitalWrite(RELE_2, LOW); // no presence detected
+  }
+}
+
+// TODO: Implement the logic to turn on the light
+void turnOnLight() {
+
+}
+
+void turnOnLightAndsendMessageToNextPole(int nextPole) {
+  turnOnLight();
+  mesh.sendSingle(nextPole, "TURN_ON");
 }
 
 /// @brief Verifies if the data received is the event TURN_ON or broker data.
@@ -132,7 +191,6 @@ String getDataObjectString() {
   float sound = getSoundData();
   float energy = getEnergyData();
 
-
   return getDataObject(sound, temperature, humidity, energy);
 }
 
@@ -152,11 +210,17 @@ void sendMessageToGateway() {
 
 void setup() {
   Serial.begin(115200);
+  // Presence sensor and rele configuration
+  pinMode(PRESENCE_SENSOR_PIN, INPUT);
+  pinMode(RELE_1, OUTPUT);
+  pinMode(RELE_1, OUTPUT);
+
+  // Humidity configuration
   // dht.begin();
   
   // MESH NETWORK 
   mesh.setDebugMsgTypes(ERROR | MESH_STATUS | CONNECTION | SYNC | COMMUNICATION | GENERAL | MSG_TYPES | REMOTE ); 
-  mesh.init(MESH_PREFIX, MESH_PASSWORD, &userScheduler, MESH_PORT, WIFI_AP_STA, 11);
+  mesh.init(MESH_PREFIX, MESH_PASSWORD, &scheduler, MESH_PORT, WIFI_AP_STA, 11);
 
   if (IS_ROOT) {
     mesh.stationManual(STATION_SSID, STATION_PASSWORD);
@@ -171,54 +235,24 @@ void setup() {
   mesh.onReceive(&receivedData);
 
   if (IS_ROOT == true) {
-    userScheduler.addTask(taskSendmsgToGateway);
+    scheduler.addTask(taskSendmsgToGateway);
     taskSendmsgToGateway.enable();
   }
   else
   {
-    userScheduler.addTask(taskSendmsg);
+    scheduler.addTask(taskSendmsg);
     taskSendmsg.enable();
   }
+
+  // Task of light control
+  scheduler.addTask(taskVerifyLightControl);
+  taskVerifyLightControl.enable();
 }
+
 
 void loop() {
   if (IS_ROOT) {
     mqttClient.loop();
   } 
   mesh.update();
-
-  verifyPoleLights();
-}
-
-/// @brief Check if the presence sensor is active in the current pole and in case it is
-/// it will send a message to the next pole via mesh network. This assumes an architecture of 3 poles
-void verifyPoleLights() {
-  if (isPresenceSensorActive()) {
-    switch (CURRENT_POLE_ID) {
-      case ID_POLE_1:
-        turnOnLightAndsendMessageToNextPole(ID_POLE_2);
-        break;
-      case ID_POLE_2:
-        turnOnLightAndsendMessageToNextPole(ID_GATEWAY);
-        turnOnLightAndsendMessageToNextPole(ID_POLE_1);
-        break;
-      case ID_GATEWAY:
-        turnOnLightAndsendMessageToNextPole(ID_POLE_2);
-        break;
-    }
-  }
-}
-
-bool isPresenceSensorActive() {
-  return true;
-}
-
-void turnOnLightAndsendMessageToNextPole(int nextPole) {
-  turnOnLight();
-  mesh.sendSingle(nextPole, "TURN_ON");
-}
-
-// TODO: Implement the logic to turn on the light
-void turnOnLight() {
-
 }

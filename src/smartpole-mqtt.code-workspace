@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"name": "smartpole-mqtt",
+			"path": ".."
+		}
+	],
+	"settings": {
+		"files.associations": {
+			"cmath": "cpp"
+		}
+	}
+}
