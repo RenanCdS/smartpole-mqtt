@@ -280,7 +280,7 @@ IPAddress getlocalIP();
 
 Task taskSendmsg(TASK_SECOND * 3,TASK_FOREVER, &sendMessage);
 Task taskSendmsgToGateway(TASK_SECOND * 3,TASK_FOREVER, &sendMessageToGateway);
-Task taskVerifyLightControl(TASK_SECOND * 2, TASK_FOREVER, &verifyLightControl);
+Task taskVerifyLightControl(TASK_SECOND * 4, TASK_FOREVER, &verifyLightControl);
 
 /// @brief Sends information to mqtt broker based on a topic
 /// @param topic The topic that the message will be sent
@@ -297,18 +297,39 @@ void sendToMqttBroker(String topic, String message) {
     }
 }
 
+void presenceLightControl()
+{
+  bool hasPresence = digitalRead(PRESENCE_SENSOR_PIN);
+  hasPresence =1;
+
+  Serial.println("Presença...");
+  Serial.println(hasPresence);
+  Serial.println("NightTime...");
+  Serial.println(nightTime);
+
+  if (nightTime && hasPresence)
+  {
+    Serial.println("Entrou no RELE 2...");
+    digitalWrite(RELE_2, HIGH); // presence detected
+  }
+  else
+  {
+    digitalWrite(RELE_2, LOW); // no presence detected
+  }
+}
+
 void verifyLightControl()
 {
   bool hasPresence = digitalRead(PRESENCE_SENSOR_PIN);
-  intervalLDR += DELAY_TIME;
-  if (intervalLDR >= BASE_TIME_TO_VERIFY_SENSORS)
-  {
-    int lightValue = digitalRead(LIGHT_SENSOR_PIN); // read light sensor
-    Serial.print("light -> ");
-    // Serial.println(lightValue);
-    nightTime = lightValue; // is night time
-    intervalLDR = 0;
-  }
+  // intervalLDR += DELAY_TIME;
+  // if (intervalLDR >= BASE_TIME_TO_VERIFY_SENSORS)
+  // {
+  int lightValue = digitalRead(LIGHT_SENSOR_PIN); // read light sensor
+  Serial.print("light -> ");
+  // Serial.println(lightValue);
+  nightTime = lightValue; // is night time
+  // intervalLDR = 0;
+  // }
 
   if (nightTime)
   {
@@ -318,16 +339,6 @@ void verifyLightControl()
   else
   {
     digitalWrite(RELE_1, LOW);
-  }
-
-  if (nightTime && hasPresence)
-  {
-
-    digitalWrite(RELE_2, HIGH); // presence detected
-  }
-  else
-  {
-    digitalWrite(RELE_2, LOW); // no presence detected
   }
 }
 
@@ -421,10 +432,10 @@ void setup() {
   // Presence sensor and rele configuration
   pinMode(PRESENCE_SENSOR_PIN, INPUT);
   pinMode(RELE_1, OUTPUT);
-  pinMode(RELE_1, OUTPUT);
+  pinMode(RELE_2, OUTPUT);
 
   // Humidity configuration
-  // dht.begin();
+  dht.begin();
   
   // MESH NETWORK 
   mesh.setDebugMsgTypes(ERROR | MESH_STATUS | CONNECTION | SYNC | COMMUNICATION | GENERAL | MSG_TYPES | REMOTE ); 
@@ -464,7 +475,6 @@ void setup() {
 void loop() {
   if (IS_ROOT) {
     mqttClient.loop();
-  } 
-  Serial.println("TESTE...");
+  }
   mesh.update();
 }
