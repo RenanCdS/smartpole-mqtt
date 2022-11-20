@@ -11,8 +11,8 @@
 #include "painlessMesh.h"
 
 // Light configuration
-#define RELE_1 22
-#define RELE_2 23
+#define RELE_1 23
+#define RELE_2 22
 #define LIGHT_SENSOR_PIN 18     // ESP32 pin GIOP36 (ADC0)
 #define PRESENCE_SENSOR_PIN 12  // ESP32 pin GIOP12 (ADC5)
 
@@ -32,9 +32,9 @@ DHT dht(DHTPIN, DHTTYPE);
 // Pole configuration
 #define CURRENT_POLE_ID 4146199285
 
-#define ID_GATEWAY 2747788829
+#define ID_GATEWAY 2224949661
 #define ID_POLE_1 4146199285
-#define ID_POLE_2 2224949661
+#define ID_POLE_2 2747788829
 
 #define TURN_ON_KEYWORD "TURN_ON"
 #define TURN_OFF_KEYWORD "TURN_OFF"
@@ -273,8 +273,6 @@ void sendMessage();
 void sendMessageToGateway();
 void verifyLightControl();
 
-IPAddress getlocalIP();
-
 Task taskSendmsg(TASK_SECOND * 3, TASK_FOREVER, &sendMessage);
 Task taskSendmsgToGateway(TASK_SECOND * 3, TASK_FOREVER, &sendMessageToGateway);
 Task taskVerifyLightControl(TASK_SECOND * 4, TASK_FOREVER, &verifyLightControl);
@@ -284,6 +282,12 @@ Task taskPresenceLightControl(TASK_SECOND * 0.5, TASK_FOREVER, &presenceLightCon
 /// @param topic The topic that the message will be sent
 /// @param message
 void sendToMqttBroker(String topic, String message) {
+  if (WiFi.status() != WL_CONNECTED)
+  {
+    WiFi.mode(WIFI_AP_STA);
+    WiFi.begin(STATION_SSID, STATION_PASSWORD);
+  }
+
   Serial.print("Attempting MQTT connection...");
   Serial.print(WiFi.status());
   if (mqttClient.connect("ESP32Client")) {
@@ -298,18 +302,25 @@ void sendToMqttBroker(String topic, String message) {
 void presenceLightControl() {
   if (nightTime) {
     hasPresence = digitalRead(PRESENCE_SENSOR_PIN);
+    Serial.println("hasPresence: ");
+    Serial.println(hasPresence);
     if (hasPresence || lightAlert) {
+      Serial.println("Rele 2 ligou!");
+      Serial.println("lightAlert: ");
+      Serial.println(lightAlert);
       timeIntervalToTurnOffPresence = 0;
       digitalWrite(RELE_2, HIGH);
       if (!lightAlert)
         sendLigthAlertOnMessageToNextPole(CURRENT_POLE_ID);
+      lightAlert = false;
     } else {
       timeIntervalToTurnOffPresence = timeIntervalToTurnOffPresence + 1;
-      if (timeIntervalToTurnOffPresence == 4) {
+      if (timeIntervalToTurnOffPresence == 10) {
         digitalWrite(RELE_2, LOW);
       }
     }
   } else {
+    Serial.println("Não está no nightTime");
     digitalWrite(RELE_2, LOW);
   }
 }
@@ -319,23 +330,17 @@ void emitLightAlertOn(int poleToSendId) {
 }
 
 void verifyLightControl() {
-  // bool hasPresence = digitalRead(PRESENCE_SENSOR_PIN);
-  // intervalLDR += DELAY_TIME;
-  // if (intervalLDR >= BASE_TIME_TO_VERIFY_SENSORS)
-  // {
   int lightValue = digitalRead(LIGHT_SENSOR_PIN);  // read light sensor
   Serial.print("light -> ");
   Serial.println(lightValue);
   nightTime = lightValue;  // is night time
-  // intervalLDR = 0;
-  // }
 
   if (nightTime) {
     Serial.println("Entrou no digital write");
     digitalWrite(RELE_1, HIGH);
   } else {
     digitalWrite(RELE_1, LOW);
-  }
+  } 
 }
 
 void sendLigthAlertOnMessageToNextPole(int currentPoleId) {
@@ -359,21 +364,18 @@ void sendLigthAlertOnMessageToNextPole(int currentPoleId) {
 /// @param from
 /// @param data
 void receivedData(uint32_t from, String data) {
+  Serial.println("Teste received data...");
   if (data == TURN_ON_KEYWORD) {
     lightAlert = true;
   } else {
-    if (data == TURN_OFF_KEYWORD) {
-      lightAlert = false;
-    } else {
-      if (IS_ROOT)
-      {
-        if (from == ID_POLE_1) {
-          Serial.println("Chegou dados do pole_1...");
-          sendToMqttBroker("smartpole/123/pole_1/data", data);
-        } else {
-          Serial.println("Chegou dados do pole_2...");
-          sendToMqttBroker("smartpole/123/pole_2/data", data);
-        }
+    if (IS_ROOT)
+    {
+      if (from == ID_POLE_1) {
+        Serial.println("Chegou dados do pole_1...");
+        sendToMqttBroker("smartpole/123/pole_1/data", data);
+      } else {
+        Serial.println("Chegou dados do pole_2...");
+        sendToMqttBroker("smartpole/123/pole_2/data", data);
       }
     }
   }
@@ -448,7 +450,7 @@ void setup() {
   // MESH NETWORK
   mesh.setDebugMsgTypes(ERROR | MESH_STATUS | CONNECTION | SYNC | COMMUNICATION | GENERAL | MSG_TYPES | REMOTE);
   mesh.init(MESH_PREFIX, MESH_PASSWORD, &scheduler, MESH_PORT, WIFI_AP_STA, 11);
-
+  
   if (IS_ROOT) {
     mesh.stationManual(STATION_SSID, STATION_PASSWORD);
     mesh.setHostname(ROOT_HOSTNAME);
