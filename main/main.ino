@@ -30,16 +30,17 @@ int BASE_TIME_TO_VERIFY_SENSORS = 3000;
 DHT dht(DHTPIN, DHTTYPE);
 
 // Pole configuration
-#define CURRENT_POLE_ID 4146199285
+#define CURRENT_POLE_ID 2747788829
 
-#define ID_GATEWAY 2224949661
-#define ID_POLE_1 4146199285
-#define ID_POLE_2 2747788829
+#define ID_GATEWAY 2747788829
+#define ID_POLE_1 4146199285 
+#define ID_POLE_2 2224949661
 
 #define TURN_ON_KEYWORD "TURN_ON"
 #define TURN_OFF_KEYWORD "TURN_OFF"
 
-#define IS_ROOT false
+#define IS_ROOT true
+
 #define ROOT_HOSTNAME "SmartPoleRoot"
 #define NODE_HOSTNAME "SmartPoleNode2"
 
@@ -267,7 +268,7 @@ IPAddress mqttBroker(34, 200, 57, 252);
 Scheduler scheduler;
 painlessMesh mesh;
 WiFiClient wifiClient;
-PubSubClient mqttClient(wifiClient);
+PubSubClient mqttClient(mqttBroker, 1883, mqttCallback, wifiClient);
 
 void sendMessage();
 void sendMessageToGateway();
@@ -299,15 +300,14 @@ void sendToMqttBroker(String topic, String message) {
   }
 }
 
+
+void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
+}
+
 void presenceLightControl() {
   if (nightTime) {
     hasPresence = digitalRead(PRESENCE_SENSOR_PIN);
-    Serial.println("hasPresence: ");
-    Serial.println(hasPresence);
     if (hasPresence || lightAlert) {
-      Serial.println("Rele 2 ligou!");
-      Serial.println("lightAlert: ");
-      Serial.println(lightAlert);
       timeIntervalToTurnOffPresence = 0;
       digitalWrite(RELE_2, HIGH);
       if (!lightAlert)
@@ -331,12 +331,9 @@ void emitLightAlertOn(int poleToSendId) {
 
 void verifyLightControl() {
   int lightValue = digitalRead(LIGHT_SENSOR_PIN);  // read light sensor
-  Serial.print("light -> ");
-  Serial.println(lightValue);
   nightTime = lightValue;  // is night time
 
   if (nightTime) {
-    Serial.println("Entrou no digital write");
     digitalWrite(RELE_1, HIGH);
   } else {
     digitalWrite(RELE_1, LOW);
@@ -386,8 +383,6 @@ void configureMqtt() {
   // After that uncomment this line and upload the code again in root node
   // WiFi.mode(WIFI_AP_STA);
   // WiFi.begin(STATION_SSID, STATION_PASSWORD);
-  mqttClient.setServer(mqttBroker, 1883);
-  mqttClient.setClient(wifiClient);
 }
 
 String getDataObject(float sound, float temperature, float humidity) {
@@ -448,13 +443,14 @@ void setup() {
   dht.begin();
 
   // MESH NETWORK
-  mesh.setDebugMsgTypes(ERROR | MESH_STATUS | CONNECTION | SYNC | COMMUNICATION | GENERAL | MSG_TYPES | REMOTE);
+  mesh.setDebugMsgTypes(ERROR | MESH_STATUS | CONNECTION | SYNC | GENERAL | MSG_TYPES | REMOTE);
   mesh.init(MESH_PREFIX, MESH_PASSWORD, &scheduler, MESH_PORT, WIFI_AP_STA, 11);
-  
   if (IS_ROOT) {
-    mesh.stationManual(STATION_SSID, STATION_PASSWORD);
     mesh.setHostname(ROOT_HOSTNAME);
-    configureMqtt();
+    //  WiFi.mode(WIFI_AP_STA);
+    // WiFi.begin(STATION_SSID, STATION_PASSWORD);
+    // configureMqtt();
+    // mesh.stationManual(STATION_SSID, STATION_PASSWORD);
   } else {
     mesh.setHostname(NODE_HOSTNAME);
   }
@@ -464,14 +460,14 @@ void setup() {
   mesh.onReceive(&receivedData);
 
   if (IS_ROOT == true) {
-    scheduler.addTask(taskSendmsgToGateway);
-    taskSendmsgToGateway.enable();
+    // scheduler.addTask(taskSendmsgToGateway);
+    // taskSendmsgToGateway.enable();
   } else {
     scheduler.addTask(taskSendmsg);
     taskSendmsg.enable();
   }
 
-  // Task of light control
+  //Task of light control
   scheduler.addTask(taskVerifyLightControl);
   scheduler.addTask(taskPresenceLightControl);
 
@@ -483,8 +479,8 @@ void setup() {
 }
 
 void loop() {
-  if (IS_ROOT) {
-    mqttClient.loop();
-  }
+  // if (IS_ROOT) {
+  //   mqttClient.loop();
+  // }
   mesh.update();
 }
