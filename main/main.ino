@@ -1,6 +1,5 @@
 #include <Arduino.h>
 #include <painlessMesh.h>
-#include "PubSubClient.h"
 #include <cstring>
 #include <ArduinoJson.h>
 #include <Adafruit_Sensor.h>
@@ -9,6 +8,12 @@
 #include "sos-iir-filter.h"
 #include "TimedAction.h"
 #include "painlessMesh.h"
+#include <WiFi.h>
+extern "C" {
+	#include "freertos/FreeRTOS.h"
+	#include "freertos/timers.h"
+}
+#include <AsyncMqttClient.h>
 
 // Light configuration
 #define RELE_1 23
@@ -30,29 +35,30 @@ int BASE_TIME_TO_VERIFY_SENSORS = 3000;
 DHT dht(DHTPIN, DHTTYPE);
 
 // Pole configuration
-#define CURRENT_POLE_ID 2747788829
+#define CURRENT_POLE_ID 2224949661
 
 #define ID_GATEWAY 2747788829
-#define ID_POLE_1 4146199285 
+#define ID_POLE_1 4146199285
 #define ID_POLE_2 2224949661
 
 #define TURN_ON_KEYWORD "TURN_ON"
 #define TURN_OFF_KEYWORD "TURN_OFF"
 
-#define IS_ROOT true
+#define IS_GATEWAY false
 
 #define ROOT_HOSTNAME "SmartPoleRoot"
-#define NODE_HOSTNAME "SmartPoleNode2"
+#define NODE_HOSTNAME "SmartPoleNode1"
 
 #define MESH_PREFIX "SMART_POLES_NETWORK"
 #define MESH_PASSWORD "PASSWORD"
 #define MESH_PORT 5555
 
-#define STATION_SSID "Net boa"
-#define STATION_PASSWORD "conectaai"
-#define STATION_PORT 5555
+#define WIFI_SSID     "Ygor 2.4G"
+#define WIFI_PASSWORD "Y87644378"
+#define STATION_PORT     5555
+#define NETWORK_CHANNEL 11
 
-// Sound sensor configuration
+// ****** Sound sensor configuration ******
 
 #define LEQ_PERIOD 1
 #define WEIGHTING C_weighting
@@ -255,20 +261,64 @@ void verifySoundControl(void* parameter) {
   }
 }
 
-// End of sound sensor configuration
+// ****** *End of sound sensor configuration *****
 
 int CONDOMINIUM_CODE = 123;
 /// @brief Topic pattern = smartpole/<CONDOMINIUM_CODE>/data
 String CONDOMINIUM_TOPIC = "smartpole/123/gateway/data";
-void mqttCallback(char* topic, byte* payload, unsigned int length);
 
-IPAddress myIP(0, 0, 0, 0);
-IPAddress mqttBroker(34, 200, 57, 252);
+// ****** MQTT Configuration ******
+
+#define MQTT_HOST IPAddress(34, 200, 57, 252)
+#define MQTT_PORT 1883
+
+AsyncMqttClient mqttClient;
+TimerHandle_t mqttReconnectTimer;
+TimerHandle_t wifiReconnectTimer;
 
 Scheduler scheduler;
 painlessMesh mesh;
-WiFiClient wifiClient;
-PubSubClient mqttClient(mqttBroker, 1883, mqttCallback, wifiClient);
+
+void WiFiEvent(WiFiEvent_t event) {
+    Serial.printf("[WiFi-event] event: %d\n", event);
+    switch(event) {
+    case SYSTEM_EVENT_STA_GOT_IP:
+        Serial.println("WiFi connected");
+        Serial.println("IP address: ");
+        Serial.println(WiFi.localIP());
+        connectToMqtt();
+        break;
+    case SYSTEM_EVENT_STA_DISCONNECTED:
+        Serial.println("WiFi lost connection");
+        xTimerStop(mqttReconnectTimer, 0); // ensure we don't reconnect to MQTT while reconnecting to Wi-Fi
+        xTimerStart(wifiReconnectTimer, 0);
+        break;
+    }
+}
+
+void connectToWifi() {
+  Serial.println("Connecting to Wi-Fi...");
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+}
+
+void connectToMqtt() {
+  Serial.println("Connecting to MQTT...");
+  mqttClient.connect();
+}
+
+void configureMqtt()
+{
+    mqttReconnectTimer = xTimerCreate("mqttTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(connectToMqtt));
+    wifiReconnectTimer = xTimerCreate("wifiTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(connectToWifi));
+
+    WiFi.onEvent(WiFiEvent);
+
+    mqttClient.setServer(MQTT_HOST, MQTT_PORT);
+
+    connectToWifi();
+}
+
+// ****** MQTT Configuration End ******
 
 void sendMessage();
 void sendMessageToGateway();
@@ -283,25 +333,8 @@ Task taskPresenceLightControl(TASK_SECOND * 0.5, TASK_FOREVER, &presenceLightCon
 /// @param topic The topic that the message will be sent
 /// @param message
 void sendToMqttBroker(String topic, String message) {
-  if (WiFi.status() != WL_CONNECTED)
-  {
-    WiFi.mode(WIFI_AP_STA);
-    WiFi.begin(STATION_SSID, STATION_PASSWORD);
-  }
-
-  Serial.print("Attempting MQTT connection...");
-  Serial.print(WiFi.status());
-  if (mqttClient.connect("ESP32Client")) {
-    Serial.printf("Sending message from %u to topic %s\n...", mesh.getNodeId(), topic.c_str());
-    mqttClient.publish(topic.c_str(), message.c_str());
-  } else {
-    Serial.print("failed, rc=");
-    Serial.print(mqttClient.state());
-  }
-}
-
-
-void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
+  Serial.printf("Sending message from %u to topic %s\n...", mesh.getNodeId(), topic.c_str());
+  mqttClient.publish(topic.c_str(), 1, true, message.c_str());
 }
 
 void presenceLightControl() {
@@ -320,7 +353,6 @@ void presenceLightControl() {
       }
     }
   } else {
-    Serial.println("Não está no nightTime");
     digitalWrite(RELE_2, LOW);
   }
 }
@@ -365,7 +397,7 @@ void receivedData(uint32_t from, String data) {
   if (data == TURN_ON_KEYWORD) {
     lightAlert = true;
   } else {
-    if (IS_ROOT)
+    if (IS_GATEWAY)
     {
       if (from == ID_POLE_1) {
         Serial.println("Chegou dados do pole_1...");
@@ -376,13 +408,6 @@ void receivedData(uint32_t from, String data) {
       }
     }
   }
-}
-
-void configureMqtt() {
-  // In case mesh network does not start comment this line, upload the code in root node.
-  // After that uncomment this line and upload the code again in root node
-  // WiFi.mode(WIFI_AP_STA);
-  // WiFi.begin(STATION_SSID, STATION_PASSWORD);
 }
 
 String getDataObject(float sound, float temperature, float humidity) {
@@ -442,27 +467,17 @@ void setup() {
   // Humidity configuration
   dht.begin();
 
-  // MESH NETWORK
-  mesh.setDebugMsgTypes(ERROR | MESH_STATUS | CONNECTION | SYNC | GENERAL | MSG_TYPES | REMOTE);
-  mesh.init(MESH_PREFIX, MESH_PASSWORD, &scheduler, MESH_PORT, WIFI_AP_STA, 11);
-  if (IS_ROOT) {
-    mesh.setHostname(ROOT_HOSTNAME);
-    //  WiFi.mode(WIFI_AP_STA);
-    // WiFi.begin(STATION_SSID, STATION_PASSWORD);
-    // configureMqtt();
-    // mesh.stationManual(STATION_SSID, STATION_PASSWORD);
-  } else {
-    mesh.setHostname(NODE_HOSTNAME);
-  }
-
-  mesh.setRoot(IS_ROOT);
-  mesh.setContainsRoot(true);
+  mesh.setDebugMsgTypes(ERROR | CONNECTION| COMMUNICATION);
   mesh.onReceive(&receivedData);
 
-  if (IS_ROOT == true) {
-    // scheduler.addTask(taskSendmsgToGateway);
-    // taskSendmsgToGateway.enable();
+  if (IS_GATEWAY) {
+    mesh.init( MESH_PREFIX, MESH_PASSWORD, &scheduler, MESH_PORT, WIFI_AP, NETWORK_CHANNEL);
+    mesh.stationManual(WIFI_SSID, WIFI_PASSWORD);
+    configureMqtt();
+    scheduler.addTask(taskSendmsgToGateway);
+    taskSendmsgToGateway.enable();
   } else {
+    mesh.init( MESH_PREFIX, MESH_PASSWORD, &scheduler, MESH_PORT, WIFI_STA, NETWORK_CHANNEL);
     scheduler.addTask(taskSendmsg);
     taskSendmsg.enable();
   }
@@ -479,8 +494,5 @@ void setup() {
 }
 
 void loop() {
-  // if (IS_ROOT) {
-  //   mqttClient.loop();
-  // }
   mesh.update();
 }
