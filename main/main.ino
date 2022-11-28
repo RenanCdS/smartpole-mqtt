@@ -266,11 +266,11 @@ void verifySoundControl(void* parameter) {
 #define MQTT_HOST IPAddress(34, 200, 57, 252)
 #define MQTT_PORT 1883
 
-// AsyncMqttClient mqttClient;
+AsyncMqttClient mqttClient;
 TimerHandle_t mqttReconnectTimer;
 TimerHandle_t wifiReconnectTimer;
 WiFiClient wifiClient;
-PubSubClient mqttClient(MQTT_HOST, MQTT_PORT, mqttCallback, wifiClient);
+// PubSubClient mqttClient(MQTT_HOST, MQTT_PORT, mqttCallback, wifiClient);
 
 Scheduler scheduler;
 painlessMesh mesh;
@@ -299,7 +299,7 @@ void connectToWifi() {
 
 void connectToMqtt() {
   Serial.println("Connecting to MQTT...");
-  // mqttClient.connect();
+  mqttClient.connect();
 }
 
 void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
@@ -307,12 +307,12 @@ void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
 
 void configureMqtt()
 {
-    // mqttReconnectTimer = xTimerCreate("mqttTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(connectToMqtt));
-    // wifiReconnectTimer = xTimerCreate("wifiTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(connectToWifi));
+    mqttReconnectTimer = xTimerCreate("mqttTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(connectToMqtt));
+    wifiReconnectTimer = xTimerCreate("wifiTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(connectToWifi));
 
-    // WiFi.onEvent(WiFiEvent);
+    WiFi.onEvent(WiFiEvent);
 
-    // mqttClient.setServer(MQTT_HOST, MQTT_PORT);
+    mqttClient.setServer(MQTT_HOST, MQTT_PORT);
 
     // connectToWifi();
 }
@@ -333,7 +333,7 @@ Task taskPresenceLightControl(TASK_SECOND * 0.5, TASK_FOREVER, &presenceLightCon
 /// @param message
 void sendToMqttBroker(String topic, String message) {
   Serial.printf("Sending message from %u to topic %s\n...", mesh.getNodeId(), topic.c_str());
-  mqttClient.publish(topic.c_str(), message.c_str());
+  mqttClient.publish(topic.c_str(),1,true, message.c_str());
 }
 
 void presenceLightControl() {
@@ -527,7 +527,7 @@ void loop() {
   mesh.update();
   if (IS_GATEWAY)
   {
-    mqttClient.loop();
+    // mqttClient.loop();
     if(myIP != getlocalIP()){
       myIP = getlocalIP();
       Serial.println("My IP is " + myIP.toString());
