@@ -314,6 +314,8 @@ void configureMqtt()
 
     mqttClient.setServer(MQTT_HOST, MQTT_PORT);
 
+    connectToMqtt();
+
     // connectToWifi();
 }
 
@@ -333,7 +335,7 @@ Task taskPresenceLightControl(TASK_SECOND * 0.5, TASK_FOREVER, &presenceLightCon
 /// @param message
 void sendToMqttBroker(String topic, String message) {
   Serial.printf("Sending message from %u to topic %s\n...", mesh.getNodeId(), topic.c_str());
-  mqttClient.publish(topic.c_str(),1,true, message.c_str());
+  mqttClient.publish(topic.c_str(), 0, true, message.c_str());
 }
 
 void presenceLightControl() {
