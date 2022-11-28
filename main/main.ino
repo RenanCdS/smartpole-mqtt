@@ -14,6 +14,8 @@ extern "C" {
 	#include "freertos/timers.h"
 }
 #include <AsyncMqttClient.h>
+#include "PubSubClient.h"
+#include <WiFiClient.h>
 
 // Light configuration
 #define RELE_1 23
@@ -264,9 +266,11 @@ void verifySoundControl(void* parameter) {
 #define MQTT_HOST IPAddress(34, 200, 57, 252)
 #define MQTT_PORT 1883
 
-AsyncMqttClient mqttClient;
+// AsyncMqttClient mqttClient;
 TimerHandle_t mqttReconnectTimer;
 TimerHandle_t wifiReconnectTimer;
+WiFiClient wifiClient;
+PubSubClient mqttClient(MQTT_HOST, MQTT_PORT, mqttCallback, wifiClient);
 
 Scheduler scheduler;
 painlessMesh mesh;
@@ -295,19 +299,22 @@ void connectToWifi() {
 
 void connectToMqtt() {
   Serial.println("Connecting to MQTT...");
-  mqttClient.connect();
+  // mqttClient.connect();
+}
+
+void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
 }
 
 void configureMqtt()
 {
-    mqttReconnectTimer = xTimerCreate("mqttTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(connectToMqtt));
-    wifiReconnectTimer = xTimerCreate("wifiTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(connectToWifi));
+    // mqttReconnectTimer = xTimerCreate("mqttTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(connectToMqtt));
+    // wifiReconnectTimer = xTimerCreate("wifiTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(connectToWifi));
 
-    WiFi.onEvent(WiFiEvent);
+    // WiFi.onEvent(WiFiEvent);
 
-    mqttClient.setServer(MQTT_HOST, MQTT_PORT);
+    // mqttClient.setServer(MQTT_HOST, MQTT_PORT);
 
-    connectToWifi();
+    // connectToWifi();
 }
 
 // ****** MQTT Configuration End ******
@@ -326,7 +333,7 @@ Task taskPresenceLightControl(TASK_SECOND * 0.5, TASK_FOREVER, &presenceLightCon
 /// @param message
 void sendToMqttBroker(String topic, String message) {
   Serial.printf("Sending message from %u to topic %s\n...", mesh.getNodeId(), topic.c_str());
-  mqttClient.publish(topic.c_str(), 1, true, message.c_str());
+  mqttClient.publish(topic.c_str(), message.c_str());
 }
 
 void presenceLightControl() {
@@ -393,10 +400,10 @@ void receivedData(uint32_t from, String data) {
     {
       if (from == ID_POLE_1) {
         Serial.println("Chegou dados do pole_1...");
-        // sendToMqttBroker("smartpole/123/pole_1/data", data);
+        sendToMqttBroker("smartpole/123/pole_1/data", data);
       } else {
         Serial.println("Chegou dados do pole_2...");
-        // sendToMqttBroker("smartpole/123/pole_2/data", data);
+        sendToMqttBroker("smartpole/123/pole_2/data", data);
       }
     }
   }
@@ -458,25 +465,38 @@ void intialConfiguration()
   pinMode(RELE_2, OUTPUT);
 }
 
+IPAddress getlocalIP();
+
+IPAddress getlocalIP() {
+  return IPAddress(mesh.getStationIP());
+}
+
+IPAddress myIP(0,0,0,0);
+IPAddress myAPIP(0,0,0,0);
+
 void meshNodeConfiguration()
 {
   mesh.setDebugMsgTypes(ERROR | CONNECTION| COMMUNICATION | MESH_STATUS);
+  mesh.setContainsRoot(true);
+  mesh.setRoot(IS_GATEWAY);
 
   if (IS_GATEWAY)
   {
-    mesh.init( MESH_PREFIX, MESH_PASSWORD, &scheduler, MESH_PORT, WIFI_AP_STA, NETWORK_CHANNEL);
+    mesh.init( MESH_PREFIX, MESH_PASSWORD, &scheduler, MESH_PORT, WIFI_AP, NETWORK_CHANNEL);
     mesh.stationManual(WIFI_SSID, WIFI_PASSWORD);
+    mesh.setHostname("MQTT_Bridge");
     configureMqtt();
     scheduler.addTask(taskSendMessageToGateway);
     taskSendMessageToGateway.enable();
+    myAPIP = IPAddress(mesh.getAPIP());
   }
   else
   {
-    mesh.init( MESH_PREFIX, MESH_PASSWORD, &scheduler, MESH_PORT);
+    mesh.init( MESH_PREFIX, MESH_PASSWORD, &scheduler, MESH_PORT, WIFI_AP_STA, NETWORK_CHANNEL);
     scheduler.addTask(taskSendMessage);
     taskSendMessage.enable();
   }
-  
+
   mesh.onReceive(&receivedData);
     
   // Task of light and presence control
@@ -505,4 +525,12 @@ void setup() {
 
 void loop() {
   mesh.update();
+  if (IS_GATEWAY)
+  {
+    mqttClient.loop();
+    if(myIP != getlocalIP()){
+      myIP = getlocalIP();
+      Serial.println("My IP is " + myIP.toString());
+    }
+  }
 }
