@@ -18,45 +18,41 @@ extern "C" {
 // Light configuration
 #define RELE_1 23
 #define RELE_2 22
-#define LIGHT_SENSOR_PIN 18     // ESP32 pin GIOP36 (ADC0)
-#define PRESENCE_SENSOR_PIN 12  // ESP32 pin GIOP12 (ADC5)
+#define LIGHT_SENSOR_PIN 18
+#define PRESENCE_SENSOR_PIN 12
 
 bool nightTime;
 bool hasPresence;
 bool lightAlert;
 int timeIntervalToTurnOffPresence = 0;
-int intervalLDR;
-int DELAY_TIME = 500;
-int BASE_TIME_TO_VERIFY_SENSORS = 3000;
 
 // Temperature and humidity sensor configuration
 #define DHTPIN 4
 #define DHTTYPE DHT11
 DHT dht(DHTPIN, DHTTYPE);
 
-// Pole configuration
-#define CURRENT_POLE_ID 2224949661
+// ****** Pole configuration *******
+#define CURRENT_POLE_ID 1370564033
 
 #define ID_GATEWAY 2747788829
-#define ID_POLE_1 4146199285
-#define ID_POLE_2 2224949661
+#define ID_POLE_1 4146199285 
+#define ID_POLE_2 1370564033
 
 #define TURN_ON_KEYWORD "TURN_ON"
 #define TURN_OFF_KEYWORD "TURN_OFF"
 
 #define IS_GATEWAY false
 
-#define ROOT_HOSTNAME "SmartPoleRoot"
-#define NODE_HOSTNAME "SmartPoleNode1"
-
 #define MESH_PREFIX "SMART_POLES_NETWORK"
 #define MESH_PASSWORD "PASSWORD"
 #define MESH_PORT 5555
 
-#define WIFI_SSID     "Ygor 2.4G"
-#define WIFI_PASSWORD "Y87644378"
+#define WIFI_SSID     "Renan"
+#define WIFI_PASSWORD "renan123"
 #define STATION_PORT     5555
-#define NETWORK_CHANNEL 11
+#define NETWORK_CHANNEL 6
+
+// ****** End of Pole configuration *******
 
 // ****** Sound sensor configuration ******
 
@@ -263,10 +259,6 @@ void verifySoundControl(void* parameter) {
 
 // ****** *End of sound sensor configuration *****
 
-int CONDOMINIUM_CODE = 123;
-/// @brief Topic pattern = smartpole/<CONDOMINIUM_CODE>/data
-String CONDOMINIUM_TOPIC = "smartpole/123/gateway/data";
-
 // ****** MQTT Configuration ******
 
 #define MQTT_HOST IPAddress(34, 200, 57, 252)
@@ -325,7 +317,7 @@ void sendMessageToGateway();
 void verifyLightControl();
 
 Task taskSendmsg(TASK_SECOND * 3, TASK_FOREVER, &sendMessage);
-Task taskSendmsgToGateway(TASK_SECOND * 3, TASK_FOREVER, &sendMessageToGateway);
+Task taskSendmsgToGateway(TASK_SECOND * 15, TASK_FOREVER, &sendMessageToGateway);
 Task taskVerifyLightControl(TASK_SECOND * 4, TASK_FOREVER, &verifyLightControl);
 Task taskPresenceLightControl(TASK_SECOND * 0.5, TASK_FOREVER, &presenceLightControl);
 
@@ -401,14 +393,16 @@ void receivedData(uint32_t from, String data) {
     {
       if (from == ID_POLE_1) {
         Serial.println("Chegou dados do pole_1...");
-        sendToMqttBroker("smartpole/123/pole_1/data", data);
+        // sendToMqttBroker("smartpole/123/pole_1/data", data);
       } else {
         Serial.println("Chegou dados do pole_2...");
-        sendToMqttBroker("smartpole/123/pole_2/data", data);
+        // sendToMqttBroker("smartpole/123/pole_2/data", data);
       }
     }
   }
 }
+
+// ****** IOT Data configuration ******* 
 
 String getDataObject(float sound, float temperature, float humidity) {
   String output;
@@ -435,62 +429,65 @@ float getHumidityData() {
   return dht.readHumidity();
 }
 
-String getDataObjectString() {
+// ****** End of IOT Data configuration ******* 
+
+void sendMessage() {
+
   float temperature = getTemperatureData();
   float humidity = getHumidityData();
   float sound = getSoundData();
 
-  return getDataObject(sound, temperature, humidity);
-}
-
-void sendMessage() {
-  String dataObjectString = getDataObjectString();
-
+  String dataObjectString = getDataObject(sound, temperature, humidity);
   mesh.sendSingle(ID_GATEWAY, dataObjectString);
   taskSendmsg.setInterval(TASK_SECOND * 5);
 }
 
 void sendMessageToGateway() {
-  // smartpole/{condominiumCode}/gateway/data
-  sendToMqttBroker("smartpole/123/gateway/data", getDataObjectString());
+  float temperature = getTemperatureData();
+  float humidity = getHumidityData();
+  float sound = getSoundData();
 
-  taskSendmsgToGateway.setInterval(TASK_SECOND * 5);
+  sendToMqttBroker("smartpole/123/gateway/data", getDataObject(sound, temperature, humidity));
+  taskSendmsgToGateway.setInterval(TASK_SECOND * 20);
 }
 
-void setup() {
+void intialConfiguration()
+{
   Serial.begin(115200);
   // Presence sensor and rele configuration
   pinMode(PRESENCE_SENSOR_PIN, INPUT);
   pinMode(RELE_1, OUTPUT);
   pinMode(RELE_2, OUTPUT);
+}
 
-  // Humidity configuration
-  dht.begin();
-
-  mesh.setDebugMsgTypes(ERROR | CONNECTION| COMMUNICATION);
+void meshNodeConfiguration()
+{
+  mesh.setDebugMsgTypes(ERROR | CONNECTION| COMMUNICATION | MESH_STATUS);
+  mesh.init( MESH_PREFIX, MESH_PASSWORD, &scheduler, MESH_PORT);
   mesh.onReceive(&receivedData);
-
-  if (IS_GATEWAY) {
-    mesh.init( MESH_PREFIX, MESH_PASSWORD, &scheduler, MESH_PORT, WIFI_AP, NETWORK_CHANNEL);
-    mesh.stationManual(WIFI_SSID, WIFI_PASSWORD);
-    configureMqtt();
-    scheduler.addTask(taskSendmsgToGateway);
-    taskSendmsgToGateway.enable();
-  } else {
-    mesh.init( MESH_PREFIX, MESH_PASSWORD, &scheduler, MESH_PORT, WIFI_STA, NETWORK_CHANNEL);
-    scheduler.addTask(taskSendmsg);
-    taskSendmsg.enable();
-  }
-
-  //Task of light control
+    
+  // Task of light and presence control
   scheduler.addTask(taskVerifyLightControl);
   scheduler.addTask(taskPresenceLightControl);
 
   taskVerifyLightControl.enable();
   taskPresenceLightControl.enable();
+}
 
+void soundConfiguration()
+{
   xTaskCreate(mic_i2s_reader_task, "Mic I2S Reader", I2S_TASK_STACK, NULL, I2S_TASK_PRI, NULL);
   xTaskCreate(verifySoundControl, "Sound Control", I2S_TASK_STACK, NULL, 5, NULL);
+}
+
+void setup() {
+  intialConfiguration();
+  
+  dht.begin();
+
+  meshNodeConfiguration();
+  
+  soundConfiguration();
 }
 
 void loop() {
