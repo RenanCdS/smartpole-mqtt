@@ -32,7 +32,7 @@ int timeIntervalToTurnOffPresence = 0;
 DHT dht(DHTPIN, DHTTYPE);
 
 // ****** Pole configuration *******
-#define CURRENT_POLE_ID 1370564033
+#define CURRENT_POLE_ID 2747788829
 
 #define ID_GATEWAY 2747788829
 #define ID_POLE_1 4146199285 
@@ -41,7 +41,7 @@ DHT dht(DHTPIN, DHTTYPE);
 #define TURN_ON_KEYWORD "TURN_ON"
 #define TURN_OFF_KEYWORD "TURN_OFF"
 
-#define IS_GATEWAY false
+#define IS_GATEWAY true
 
 #define MESH_PREFIX "SMART_POLES_NETWORK"
 #define MESH_PASSWORD "PASSWORD"
@@ -316,8 +316,8 @@ void sendMessage();
 void sendMessageToGateway();
 void verifyLightControl();
 
-Task taskSendmsg(TASK_SECOND * 3, TASK_FOREVER, &sendMessage);
-Task taskSendmsgToGateway(TASK_SECOND * 15, TASK_FOREVER, &sendMessageToGateway);
+Task taskSendMessage(TASK_SECOND * 5, TASK_FOREVER, &sendMessage);
+Task taskSendMessageToGateway(TASK_SECOND * 15, TASK_FOREVER, &sendMessageToGateway);
 Task taskVerifyLightControl(TASK_SECOND * 4, TASK_FOREVER, &verifyLightControl);
 Task taskPresenceLightControl(TASK_SECOND * 0.5, TASK_FOREVER, &presenceLightControl);
 
@@ -439,7 +439,6 @@ void sendMessage() {
 
   String dataObjectString = getDataObject(sound, temperature, humidity);
   mesh.sendSingle(ID_GATEWAY, dataObjectString);
-  taskSendmsg.setInterval(TASK_SECOND * 5);
 }
 
 void sendMessageToGateway() {
@@ -448,7 +447,6 @@ void sendMessageToGateway() {
   float sound = getSoundData();
 
   sendToMqttBroker("smartpole/123/gateway/data", getDataObject(sound, temperature, humidity));
-  taskSendmsgToGateway.setInterval(TASK_SECOND * 20);
 }
 
 void intialConfiguration()
@@ -463,7 +461,22 @@ void intialConfiguration()
 void meshNodeConfiguration()
 {
   mesh.setDebugMsgTypes(ERROR | CONNECTION| COMMUNICATION | MESH_STATUS);
-  mesh.init( MESH_PREFIX, MESH_PASSWORD, &scheduler, MESH_PORT);
+
+  if (IS_GATEWAY)
+  {
+    mesh.init( MESH_PREFIX, MESH_PASSWORD, &scheduler, MESH_PORT, WIFI_AP_STA, NETWORK_CHANNEL);
+    mesh.stationManual(WIFI_SSID, WIFI_PASSWORD);
+    configureMqtt();
+    scheduler.addTask(taskSendMessageToGateway);
+    taskSendMessageToGateway.enable();
+  }
+  else
+  {
+    mesh.init( MESH_PREFIX, MESH_PASSWORD, &scheduler, MESH_PORT);
+    scheduler.addTask(taskSendMessage);
+    taskSendMessage.enable();
+  }
+  
   mesh.onReceive(&receivedData);
     
   // Task of light and presence control
